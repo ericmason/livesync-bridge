@@ -193,6 +193,20 @@ readable by a fresh plugin-side replica) is available:
 ./script/test-bucket-peer.sh   # requires deno and minio (or docker)
 ```
 
+### Generating a Setup URI without a configured device
+
+Normally the plugin's *Copy setup URI* command requires an already-configured
+vault. `script/generate-setup-uri.ts` produces one headlessly for a bucket
+remote (same scheme as upstream's `utils/flyio/generate_setupuri.ts`), so every
+device — including the first — can be set up with *Open setup URI* + a short
+transport passphrase instead of typing S3 credentials into the settings UI:
+
+```bash
+bucket=my-vault-bucket region=us-east-1 accessKey=... secretKey=... \
+passphrase='vault E2EE passphrase' uriPassphrase='transport words' \
+deno run -A script/generate-setup-uri.ts > setup-uri.txt
+```
+
 ### Preparing the bucket (AWS S3 example)
 
 The bridge works with whatever bucket the plugin already uses — nothing extra
