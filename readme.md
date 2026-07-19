@@ -193,6 +193,75 @@ readable by a fresh plugin-side replica) is available:
 ./script/test-bucket-peer.sh   # requires deno and minio (or docker)
 ```
 
+### Preparing the bucket (AWS S3 example)
+
+The bridge works with whatever bucket the plugin already uses — nothing extra
+is required. If you are creating the bucket from scratch, this is a sensible,
+least-privilege setup (adapt the ideas for R2/MinIO):
+
+```bash
+aws s3api create-bucket --bucket my-vault-bucket
+# Keep it private, and keep old versions around as an undo button:
+aws s3api put-public-access-block --bucket my-vault-bucket \
+  --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+aws s3api put-bucket-versioning --bucket my-vault-bucket \
+  --versioning-configuration Status=Enabled
+# Optional: stop noncurrent versions from accumulating forever.
+aws s3api put-bucket-lifecycle-configuration --bucket my-vault-bucket \
+  --lifecycle-configuration '{"Rules":[{"ID":"expire-noncurrent","Status":"Enabled","Filter":{},
+    "NoncurrentVersionExpiration":{"NoncurrentDays":30},
+    "AbortIncompleteMultipartUpload":{"DaysAfterInitiation":7}}]}'
+```
+
+A dedicated IAM user scoped to just this bucket needs only:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+            "Resource": "arn:aws:s3:::my-vault-bucket"
+        },
+        {
+            "Effect": "Allow",
+            "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+            "Resource": "arn:aws:s3:::my-vault-bucket/*"
+        }
+    ]
+}
+```
+
+**CORS:** the *bridge* needs none — CORS is a browser-engine concern and the
+bridge is a server-side process. The **Obsidian app** does need it (it calls
+S3 from inside an Electron/Capacitor page), so if the plugin cannot connect,
+add a CORS rule on the bucket allowing origins `app://obsidian.md`,
+`capacitor://localhost` and `http://localhost` with methods
+`GET, PUT, POST, DELETE, HEAD`, all headers, exposing `ETag`. This is not
+access control — authentication is still the access key; it only tells the
+app's embedded browser the bucket may be talked to.
+
+### Troubleshooting bucket peers
+
+- **"Bucket is empty (not initialized by any device yet)"** — by design. The
+  bridge never creates the vault; run the plugin's setup against the bucket
+  first, and the bridge joins on its next poll.
+- **"Remote bucket is encrypted but no passphrase provided"** (or garbage /
+  decryption errors) — the bucket's preferred settings say E2EE (or path
+  obfuscation) is on; set the same `passphrase` / `obfuscatePassphrase` the
+  vault uses.
+- **Writes are logged as "ignored (bucket peer is pull-only)"** — that is the
+  `direction: "pull"` safety default; set `"direction": "sync"` to write back.
+- **Files exist in the vault but never appear** — check `baseDir`: like
+  couchdb peers, only documents under `baseDir` are synchronised, and internal
+  (`i:`-prefixed) files need `includeInternal` patterns.
+- **Start over from scratch** — stop the bridge, delete the peer's
+  `localDatabase` directory (default `./dat/bucket-<name>` plus the
+  `...-store` directory next to it), and start with `--reset`. The bridge
+  re-downloads the whole journal and re-dispatches everything; peers
+  compare content before writing, so this is safe.
+
 ## Realistic example
 
 | name                       | database_uri / path                       | CouchDB username | CouchDB password | vault E2EE passphrase | baseDir  |
