@@ -29,6 +29,23 @@
             "baseDir": "syncLinux/"
         },
         {
+            "type": "bucket",
+            "name": "bucket1",
+            "group": "bucket-group",
+            "endpoint": "http://localhost:9000",
+            "region": "us-east-1",
+            "accessKey": "accessKey",
+            "secretKey": "secretKey",
+            "bucket": "vault-bucket",
+            "bucketPrefix": "",
+            "forcePathStyle": true,
+            "passphrase": "passphrase",
+            "obfuscatePassphrase": "passphrase",
+            "baseDir": "",
+            "direction": "pull",
+            "syncIntervalSeconds": 30
+        },
+        {
             "type": "storage",
             "group": "main",
             "name": "test-windows",

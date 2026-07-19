@@ -2,6 +2,7 @@ import { Config, FileData } from "./types.ts";
 import { Peer, PeerHealth } from "./Peer.ts";
 import { PeerStorage } from "./PeerStorage.ts";
 import { PeerCouchDB } from "./PeerCouchDB.ts";
+import { PeerBucket } from "./PeerBucket.ts";
 
 
 export class Hub {
@@ -29,6 +30,9 @@ export class Hub {
             if (peer.type == "couchdb") {
                 const p = new PeerCouchDB(peer, this.dispatch.bind(this));
                 this.peers.push(p);
+            } else if (peer.type == "bucket") {
+                const p = new PeerBucket(peer, this.dispatch.bind(this));
+                this.peers.push(p);
             } else if (peer.type == "storage") {
                 const p = new PeerStorage(peer, this.dispatch.bind(this));
                 this.peers.push(p);
@@ -36,20 +40,20 @@ export class Hub {
                 throw new Error(`Unexpected Peer type: ${(peer as any)?.name} - ${(peer as any)?.type}`);
             }
         }
-        // Initialize couchdb peers FIRST and await them, then start storage peers.
-        // Otherwise a storage peer's offline scan can push to a couchdb peer before its
-        // DB managers are initialized (initializeDatabase), causing
+        // Initialize remote peers (couchdb/bucket) FIRST and await them, then start
+        // storage peers. Otherwise a storage peer's offline scan can push to a remote
+        // peer before its DB managers are initialized (initializeDatabase), causing
         // "Cannot read properties of undefined (reading 'getDBEntryMeta')".
         (async () => {
             for (const p of this.peers) {
-                if (p.config.type === "couchdb") {
+                if (p.config.type !== "storage") {
                     await p.start().catch((e) => {
                         console.error(`[Hub] peer "${p.config.name}" start() failed:`, e);
                     });
                 }
             }
             for (const p of this.peers) {
-                if (p.config.type !== "couchdb") {
+                if (p.config.type === "storage") {
                     p.start().catch((e) => {
                         console.error(`[Hub] peer "${p.config.name}" start() failed:`, e);
                     });

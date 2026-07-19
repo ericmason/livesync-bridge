@@ -63,7 +63,7 @@ The configuration file consists of the following structure.
 {
   "peers": [
     {
-      "type": "couchdb", // Type should be `couchdb or storage`
+      "type": "couchdb", // Type should be `couchdb`, `bucket` or `storage`
       "name": "test1", // Should be unique
       "group": "main", // we can omit this.
       "database": "test",
@@ -91,6 +91,24 @@ The configuration file consists of the following structure.
       "minimumChunkSize": 20,
       "obfuscatePassphrase": "passphrase",
       "baseDir": "xxxx/",
+    },
+    {
+      "type": "bucket", // An Object Storage (S3 / R2 / MinIO) remote — "Bucket synchronisation".
+      "name": "bucket-test1",
+      "group": "main", // we can omit this.
+      "endpoint": "http://localhost:9000", // S3-compatible endpoint. Leave empty ("") for AWS S3.
+      "region": "us-east-1",
+      "accessKey": "accessKey",
+      "secretKey": "secretKey",
+      "bucket": "vault-bucket",
+      "bucketPrefix": "", // Key prefix; must match the plugin's setting.
+      "forcePathStyle": true, // Usually true for MinIO/self-hosted, false for AWS/R2.
+      "passphrase": "passphrase", // E2EE passphrase, if you do not enabled, leave it blank.
+      "obfuscatePassphrase": "passphrase", // Path obfuscation passphrase, same rule as couchdb peers.
+      "baseDir": "", // Sharing folder, same semantics as couchdb peers.
+      "direction": "pull", // "pull" (bucket -> others only; the safe default) or "sync" (bidirectional).
+      "syncIntervalSeconds": 30, // Object storage has no change feed; the bridge polls the journal.
+      "localDatabase": "./dat/bucket-test1" // Where the persistent local replica lives. Can be omitted.
     },
     {
       "type": "storage",
@@ -130,6 +148,50 @@ A document is included when its de-prefixed path matches any one of the patterns
 
 > [!CAUTION]
 > This synchronises files that are normally hidden and internal. Such folders often hold tool configuration that can contain machine-specific paths, local settings, or secrets. Only include patterns you genuinely intend to share, and review what they match before enabling. The option is opt-in: leave it out to keep the default behaviour, where all internal/hidden files are skipped.
+
+## Object Storage (bucket) peers
+
+`"type": "bucket"` connects the bridge to a Self-hosted LiveSync **Object
+Storage** remote (Minio, S3, R2, ... — the plugin's "Bucket synchronisation" /
+journal sync). This lets you mirror a bucket-backed vault to plain files on a
+headless machine, with no CouchDB anywhere.
+
+How it works: object storage has no queryable database — the bucket holds a
+journal of packed document batches. The bridge therefore keeps a small
+**persistent local replica** (a LevelDB-backed PouchDB, at `localDatabase`,
+default `./dat/bucket-<name>`) and lets the plugin's own journal-sync code
+apply and create journal packs against it. E2EE and path obfuscation behave
+exactly as in the plugin: journal packs in the bucket are encrypted with
+`passphrase`, and document IDs are obfuscated with `obfuscatePassphrase`.
+
+Points worth knowing:
+
+- **`direction`**: `"pull"` (default) only reads from the bucket; writes coming
+  from other peers are rejected with a log message. Set `"sync"` for
+  bidirectional synchronisation once you trust the setup.
+- **Polling**: buckets cannot push change notifications, so the bridge polls
+  every `syncIntervalSeconds` (default 30). Local file changes in `"sync"` mode
+  trigger an upload shortly after they happen.
+- **The bridge never initialises an empty bucket.** Set the vault up from a
+  real device (Obsidian) first; the bridge waits until the bucket has a
+  milestone and then joins like any other device.
+- **Tweaks are adopted automatically** from the bucket's preferred settings
+  (chunk sizes, splitter, compression...), like `useRemoteTweaks` for couchdb
+  peers. Disable with `"useRemoteTweaks": false` if you really need to.
+- If the bucket is rebuilt from a device ("Fresh start" / overwrite), the
+  bridge detects the changed creation stamp, resets its local replica, and
+  fetches everything from scratch.
+- Keep the `localDatabase` and `dat/` directories persistent between runs;
+  they carry the replica and the journal checkpoints. Deleting them is safe
+  but causes a full re-download on the next start.
+
+An integration test covering plugin-compatibility end-to-end (seed from the
+plugin code path -> pull; edits -> incremental pull; bridge write -> verified
+readable by a fresh plugin-side replica) is available:
+
+```bash
+./script/test-bucket-peer.sh   # requires deno and minio (or docker)
+```
 
 ## Realistic example
 
@@ -179,7 +241,7 @@ Totally, all files are synchronized like this:
 {
   "peers": [
     {
-      "type": "couchdb", // Type should be `couchdb or storage`
+      "type": "couchdb", // Type should be `couchdb`, `bucket` or `storage`
       "name": "cornbread", // Should be unique
       "url": "http://localhost:5984",
       "database": "classroom_cornbread",
@@ -192,7 +254,7 @@ Totally, all files are synchronized like this:
       "baseDir": "shared/" // Sharing folder
     },
     {
-      "type": "couchdb", // Type should be `couchdb or storage`
+      "type": "couchdb", // Type should be `couchdb`, `bucket` or `storage`
       "name": "shared", // Should be unique
       "url": "http://localhost:5984",
       "database": "classroom_shared",
