@@ -41,7 +41,7 @@ const conf = {
     useCustomRequestHandler: env("useCustomRequestHandler", "") === "true",
     encrypt: true,
     passphrase: env("passphrase"),
-    usePathObfuscation: true,
+    usePathObfuscation: env("usePathObfuscation", "true") === "true",
     syncOnStart: true,
     syncOnFileOpen: true,
     periodicReplication: true,
